@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>McGill LRS</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M4 4h16v16H4z" rx="2"/>
+          <path d="M9 9l3 2 3-2v7l-3-2-3 2V9z"/>
+        </svg>
+        <span class="header-title">LRS Downloader</span>
+      </div>
+      <span class="header-badge" id="tokenStatus">No token</span>
+    </header>
+
+    <!-- Empty state: waiting for auto-capture -->
+    <div id="emptyState" class="empty-state">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+          <rect x="3" y="3" width="18" height="18" rx="3"/>
+          <path d="M8 12h8M12 8v8" opacity="0.4"/>
+        </svg>
+      </div>
+      <h3 class="empty-title">Open Lecture Recordings</h3>
+      <p class="empty-desc">Visit <strong>myCourses</strong> and open any course's Lecture Recordings page. The extension will automatically detect your session.</p>
+    </div>
+
+    <!-- Recordings list -->
+    <div id="recordingsView" style="display:none">
+      <div class="course-header">
+        <h2 class="course-name" id="courseName"></h2>
+        <p class="course-meta" id="courseMeta"></p>
+      </div>
+      <div class="recordings-list" id="recordingsList"></div>
+      <div class="actions-bar">
+        <button class="btn btn-primary" id="downloadAllBtn">
+          Download all
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M4 8l4 4 4-4M3 13h10"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

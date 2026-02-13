@@ -1,0 +1,373 @@
+/* ─── Veil-inspired design system ─────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --bg:          #0a0a0a;
+  --bg-card:     #141414;
+  --bg-hover:    #1a1a1a;
+  --bg-active:   #1f1f1f;
+  --border:      #222;
+  --border-hover:#333;
+  --text:        #e8e0d4;
+  --text-muted:  #888;
+  --text-dim:    #555;
+  --accent:      #e8dcc8;
+  --accent-dim:  #c4b89c;
+  --green:       #4ade80;
+  --green-dim:   #166534;
+  --red:         #f87171;
+  --blue:        #60a5fa;
+  --radius:      12px;
+  --radius-sm:   8px;
+  --radius-pill:  999px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 380px;
+  min-height: 200px;
+  max-height: 560px;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Scrollbar */
+body::-webkit-scrollbar { width: 4px; }
+body::-webkit-scrollbar-track { background: transparent; }
+body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ─── Header ─────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo {
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.header-title {
+  font-family: 'Instrument Serif', serif;
+  font-size: 16px;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.header-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+
+.header-badge.active {
+  border-color: var(--green-dim);
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.06);
+}
+
+/* ─── Empty State ────────────────────────────────── */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 40px 32px;
+}
+
+.empty-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--text-dim);
+  margin-bottom: 16px;
+}
+
+.empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.empty-title {
+  font-family: 'Instrument Serif', serif;
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.empty-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 280px;
+}
+
+.empty-desc strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ─── Course Header ──────────────────────────────── */
+
+.course-header {
+  padding: 16px 16px 0;
+}
+
+.course-name {
+  font-family: 'Instrument Serif', serif;
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.course-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ─── Recordings List ────────────────────────────── */
+
+.recordings-list {
+  padding: 12px 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rec-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rec-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.rec-date {
+  min-width: 72px;
+}
+
+.rec-date-day {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.rec-date-time {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.rec-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rec-instructor {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rec-duration {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.rec-progress-text {
+  font-size: 11px;
+  color: var(--blue);
+}
+
+.rec-progress-text.done {
+  color: var(--green);
+}
+
+.rec-progress-text.failed {
+  color: var(--red);
+}
+
+.progress-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.rec-action {
+  flex-shrink: 0;
+}
+
+.btn-dl {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.btn-dl:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: rgba(232, 220, 200, 0.06);
+}
+
+.btn-dl svg {
+  width: 14px;
+  height: 14px;
+}
+
+.btn-dl.downloading {
+  border-color: var(--blue);
+  color: var(--blue);
+  animation: pulse 1.5s infinite;
+}
+
+.btn-dl.complete {
+  border-color: var(--green-dim);
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.06);
+}
+
+.btn-dl.failed {
+  border-color: #7f1d1d;
+  color: var(--red);
+}
+
+.rec-error {
+  font-size: 11px;
+  color: var(--red);
+  padding: 2px 12px 8px 96px;
+  opacity: 0.8;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── Actions Bar ────────────────────────────────── */
+
+.actions-bar {
+  padding: 12px 16px 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #0a0a0a;
+}
+
+.btn-primary:hover {
+  background: var(--accent-dim);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
+/* ─── Loading ────────────────────────────────────── */
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  gap: 8px;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
