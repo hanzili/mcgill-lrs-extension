@@ -3,6 +3,20 @@
 
 const API_BASE = 'https://lrswapi.campus.mcgill.ca/api';
 
+// ─── Reset on reload (dev) ───────────────────────────
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.storage.local.remove('downloads');
+  // Clear OPFS temp files
+  try {
+    const root = await navigator.storage.getDirectory();
+    for await (const [name] of root.entries()) {
+      if (name.startsWith('lrs_')) await root.removeEntry(name);
+    }
+  } catch {}
+  console.log('[LRS] State reset on reload');
+});
+
 // ─── Header injection for CDN downloads ──────────────
 // The CDN requires Origin + Referer from lrs.mcgill.ca.
 // chrome.downloads can't set these (restricted), so we use
