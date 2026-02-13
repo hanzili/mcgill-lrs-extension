@@ -7,7 +7,8 @@
     "storage",
     "downloads",
     "webRequest",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "offscreen"
   ],
   "host_permissions": [
     "https://*.mcgill.ca/*"

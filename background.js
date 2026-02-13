@@ -33,6 +33,7 @@ chrome.declarativeNetRequest.updateDynamicRules({
 // ─── JWT Capture: Method 1 — Content script relay ────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'KEEPALIVE') return;
   if (msg.type === 'TOKEN_CAPTURED') {
     handleJwtCaptured(msg.token);
     return;
@@ -149,9 +150,29 @@ async function fetchRecordings(token, courseId) {
   }
 }
 
+// ─── Keep-alive (prevents Chrome from killing SW during downloads) ──
+
+let activeDownloads = 0;
+
+async function startKeepAlive() {
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['WORKERS'],
+      justification: 'Keep service worker alive during downloads'
+    });
+  } catch {} // already exists
+}
+
+async function stopKeepAlive() {
+  try { await chrome.offscreen.closeDocument(); } catch {}
+}
+
 // ─── Downloads ───────────────────────────────────────
 
 async function downloadRecording(recording, token) {
+  activeDownloads++;
+  if (activeDownloads === 1) await startKeepAlive();
   try {
     // Find video source — try multiple property names
     const sources = recording.sources
@@ -237,7 +258,12 @@ async function downloadRecording(recording, token) {
     let lastUpdate = 0;
 
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([
+        reader.read(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Download stalled (no data for 60s)')), 60000)
+        )
+      ]);
       if (done) break;
       await writable.write(value);
       received += value.byteLength;
@@ -273,6 +299,12 @@ async function downloadRecording(recording, token) {
     console.error('[LRS] Download failed:', e.message);
     await updateProgress(recording.id, null, 0, 0, 'failed');
     return { ok: false, error: e.message };
+  } finally {
+    activeDownloads--;
+    if (activeDownloads <= 0) {
+      activeDownloads = 0;
+      stopKeepAlive();
+    }
   }
 }
 
