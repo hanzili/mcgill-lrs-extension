@@ -42,4 +42,4 @@ If this policy is updated, the changes will be posted here with a revised date.
 ## Contact
 
 If you have questions about this privacy policy, please open an issue at:
-https://github.com/YOUR_USERNAME/mcgill-lrs-extension/issues
+https://github.com/hanzili/mcgill-lrs-extension/issues
