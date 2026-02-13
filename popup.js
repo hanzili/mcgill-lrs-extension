@@ -137,7 +137,10 @@ function renderRecordings() {
         <div class="rec-info">
           <div class="rec-instructor">${instructor}</div>
           <div class="rec-progress" id="progress-${rec.id}">
-            ${dlState === 'downloading' ? formatProgress(dl) : `<span class="rec-duration">${duration}</span>`}
+            ${dlState === 'downloading' || dlState === 'saving' ? formatProgress(dl)
+              : dlState === 'complete' ? '<span class="rec-progress-text done">Downloaded</span>'
+              : dlState === 'failed' ? '<span class="rec-progress-text failed">Failed · click to retry</span>'
+              : `<span class="rec-duration">${duration}</span>`}
           </div>
         </div>
         <div class="rec-action">
@@ -195,7 +198,7 @@ function updateAllProgress() {
       } else if (dl.status === 'complete') {
         progressEl.innerHTML = `<span class="rec-progress-text done">Downloaded</span>`;
       } else if (dl.status === 'failed') {
-        progressEl.innerHTML = `<span class="rec-progress-text failed">Failed</span>`;
+        progressEl.innerHTML = `<span class="rec-progress-text failed">Failed · click to retry</span>`;
       }
     }
 
@@ -218,7 +221,7 @@ function getIcon(status) {
     case 'complete':
       return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8.5l3.5 3.5 6.5-7"/></svg>`;
     case 'failed':
-      return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8"/></svg>`;
+      return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 0 1 10.3-4.2M14 8a6 6 0 0 1-10.3 4.2M14 2v4h-4M2 14v-4h4"/></svg>`;
     default:
       return `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M4 8l4 4 4-4M3 13h10"/></svg>`;
   }
