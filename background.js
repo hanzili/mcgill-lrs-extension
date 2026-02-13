@@ -7,34 +7,7 @@ const API_BASE = 'https://lrswapi.campus.mcgill.ca/api';
 
 chrome.runtime.onInstalled.addListener(async () => {
   await chrome.storage.local.remove('downloads');
-  console.log('[LRS] State reset on reload');
 });
-
-// ─── Header injection for CDN downloads ──────────────
-// declarativeNetRequest injects Origin/Referer/Range at the network
-// level so chrome.downloads.download() works directly with CDN URLs.
-
-chrome.declarativeNetRequest.updateDynamicRules({
-  removeRuleIds: [1],
-  addRules: [
-    {
-      id: 1,
-      priority: 1,
-      action: {
-        type: 'modifyHeaders',
-        requestHeaders: [
-          { header: 'Origin', operation: 'set', value: 'https://lrs.mcgill.ca' },
-          { header: 'Referer', operation: 'set', value: 'https://lrs.mcgill.ca/' },
-          { header: 'Range', operation: 'set', value: 'bytes=0-' }
-        ]
-      },
-      condition: {
-        regexFilter: '.*[Ll][Rr][Ss][Cc][Dd][Nn]\\.mcgill\\.ca.*',
-        isUrlFilterCaseSensitive: false
-      }
-    }
-  ]
-}).catch(e => console.error('[LRS] Header rule install failed:', e));
 
 // ─── JWT Capture: Method 1 — Content script relay ────────
 
@@ -52,7 +25,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'DOWNLOAD_RECORDING') {
-    downloadRecording(msg.recording, msg.token).then(sendResponse);
+    downloadRecording(msg.recording).then(sendResponse);
+    return true;
+  }
+  if (msg.type === 'DOWNLOAD_ALL') {
+    downloadAll(msg.recordings).then(sendResponse);
     return true;
   }
 });
@@ -195,86 +172,78 @@ function buildFilename(recording) {
   return `${course}_${date}_${instructor}.ts`;
 }
 
-async function downloadRecording(recording, token) {
+// Download a single recording — generates a curl script
+async function downloadRecording(recording) {
   try {
     const mediaUrl = await resolveMediaUrl(recording);
     const filename = buildFilename(recording);
 
-    console.log('[LRS] Resolved URL:', mediaUrl.substring(0, 80));
-
-    // Strategy: hand the CDN URL directly to Chrome's download manager.
-    // declarativeNetRequest rules inject Origin/Referer/Range headers
-    // at the network level. The service worker is NOT involved in the
-    // actual data transfer — Chrome handles everything natively.
-    const downloadId = await chrome.downloads.download({
-      url: mediaUrl,
-      filename: `McGill-Lectures/${filename}`
-    });
-
-    console.log('[LRS] Native download started, id:', downloadId);
-
-    await updateProgress(recording.id, filename, 0, 0, 'downloading', downloadId);
-
-    // Poll Chrome's download manager for byte-level progress
-    pollProgress(recording.id, downloadId, filename);
-
-    return { ok: true, downloadId, filename };
+    const script = generateScript([{ mediaUrl, filename }]);
+    return await saveScript(script, `download_${filename.replace('.ts', '')}.command`);
   } catch (e) {
     console.error('[LRS] Download failed:', e.message);
-    await updateProgress(recording.id, null, 0, 0, 'failed');
     return { ok: false, error: e.message };
   }
 }
 
-function pollProgress(recId, downloadId, filename) {
-  const check = async () => {
-    try {
-      const [item] = await chrome.downloads.search({ id: downloadId });
-      if (!item) return;
-
-      if (item.state === 'in_progress') {
-        const received = item.bytesReceived || 0;
-        const total = item.totalBytes > 0 ? item.totalBytes : 0;
-        await updateProgress(recId, filename, received, total, 'downloading', downloadId);
-        setTimeout(check, 2000);
+// Download all recordings — generates one script with all curl commands
+async function downloadAll(recordings) {
+  try {
+    const items = [];
+    for (const rec of recordings) {
+      try {
+        const mediaUrl = await resolveMediaUrl(rec);
+        const filename = buildFilename(rec);
+        items.push({ mediaUrl, filename });
+      } catch (e) {
+        console.error('[LRS] Skipping recording:', e.message);
       }
-      // 'complete' and 'interrupted' handled by onChanged listener below
-    } catch {}
-  };
-  setTimeout(check, 1000);
-}
-
-async function updateProgress(recId, filename, received, total, status, downloadId) {
-  const data = await chrome.storage.local.get('downloads');
-  const downloads = data.downloads || {};
-  downloads[recId] = {
-    ...(downloads[recId] || {}),
-    filename,
-    received,
-    total,
-    status,
-    ...(downloadId ? { downloadId } : {})
-  };
-  await chrome.storage.local.set({ downloads });
-}
-
-// Final state changes (complete / failed)
-chrome.downloads.onChanged.addListener(async (delta) => {
-  if (!delta.state) return;
-
-  const data = await chrome.storage.local.get('downloads');
-  const downloads = data.downloads || {};
-
-  for (const [recId, dl] of Object.entries(downloads)) {
-    if (dl.downloadId === delta.id) {
-      if (delta.state.current === 'complete') {
-        downloads[recId].status = 'complete';
-        downloads[recId].received = downloads[recId].total;
-      } else if (delta.state.current === 'interrupted') {
-        downloads[recId].status = 'failed';
-      }
-      await chrome.storage.local.set({ downloads });
-      break;
     }
+
+    if (items.length === 0) return { ok: false, error: 'No downloadable recordings' };
+
+    const course = (recordings[0].courseName || 'Recordings').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+    const script = generateScript(items);
+    return await saveScript(script, `download_${course}.command`);
+  } catch (e) {
+    console.error('[LRS] Download all failed:', e.message);
+    return { ok: false, error: e.message };
   }
-});
+}
+
+function generateScript(items) {
+  const curls = items.map((item, i) => {
+    const num = items.length > 1 ? `(${i + 1}/${items.length}) ` : '';
+    return `echo "\\n⬇  ${num}${item.filename}"
+curl -# -L \\
+  -o "$DIR/${item.filename}" \\
+  -H "Origin: https://lrs.mcgill.ca" \\
+  -H "Referer: https://lrs.mcgill.ca/" \\
+  -H "Range: bytes=0-" \\
+  "${item.mediaUrl}"`;
+  }).join('\n\n');
+
+  return `#!/bin/bash
+DIR="$HOME/Downloads/McGill-Lectures"
+mkdir -p "$DIR"
+echo "Saving to: $DIR"
+echo "Downloading ${items.length} recording${items.length > 1 ? 's' : ''}..."
+
+${curls}
+
+echo "\\n✓ Done! Files saved to $DIR"
+`;
+}
+
+async function saveScript(script, filename) {
+  const blob = new Blob([script], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+
+  const downloadId = await chrome.downloads.download({
+    url,
+    filename: `McGill-Lectures/${filename}`
+  });
+
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return { ok: true, downloadId, filename, isScript: true };
+}
