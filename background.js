@@ -236,14 +236,12 @@ echo "\\n✓ Done! Files saved to $DIR"
 }
 
 async function saveScript(script, filename) {
-  const blob = new Blob([script], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
+  const url = 'data:text/plain;base64,' + btoa(script);
 
   const downloadId = await chrome.downloads.download({
     url,
     filename: `McGill-Lectures/${filename}`
   });
 
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
   return { ok: true, downloadId, filename, isScript: true };
 }
