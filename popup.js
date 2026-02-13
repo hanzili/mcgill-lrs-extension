@@ -33,9 +33,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Watchdog: detect downloads stuck in 'saving' or 'downloading'
-  // (service worker may have been killed by Chrome for large files)
-  setInterval(recoverStaleDownloads, 15000);
 });
 
 function tryLoadFromState() {
@@ -185,11 +182,6 @@ function updateAllProgress() {
     const dl = state.downloads[rec.id];
     if (!dl) return;
 
-    // Reset stale watchdog on every real progress update
-    if (dl.status === 'downloading' || dl.status === 'saving') {
-      dl.staleCheck = Date.now();
-    }
-
     // Update progress text + bar
     const progressEl = $(`#progress-${rec.id}`);
     if (progressEl) {
@@ -325,38 +317,6 @@ async function clearStaleDownloads() {
   if (changed) {
     await chrome.storage.local.set({ downloads });
     state.downloads = downloads;
-  }
-}
-
-async function recoverStaleDownloads() {
-  if (!recordings.length) return;
-
-  const now = Date.now();
-  const data = await chrome.storage.local.get('downloads');
-  const downloads = data.downloads || {};
-  let changed = false;
-
-  for (const rec of recordings) {
-    const dl = downloads[rec.id];
-    if (!dl) continue;
-
-    // If stuck in 'downloading' for over 2 minutes with no progress update,
-    // the service worker likely died — mark as failed so user can retry
-    if (dl.status === 'downloading' && dl.staleCheck) {
-      if (now - dl.staleCheck > 120000) {
-        downloads[rec.id].status = 'failed';
-        changed = true;
-      }
-    } else if (dl.status === 'downloading') {
-      downloads[rec.id].staleCheck = now;
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    await chrome.storage.local.set({ downloads });
-    state.downloads = downloads;
-    updateAllProgress();
   }
 }
 
