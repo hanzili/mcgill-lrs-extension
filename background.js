@@ -222,29 +222,31 @@ async function downloadRecording(recording, token) {
       || '0'
     );
 
-    // Stream with progress tracking
+    // Stream with progress tracking via TransformStream
+    // (avoids manually accumulating chunks in JS — lets the browser
+    //  handle buffering natively, which is far more memory-efficient
+    //  for large files like 1GB+ lecture recordings)
     await updateProgress(recording.id, filename, 0, totalSize, 'downloading');
 
-    const reader = videoResp.body.getReader();
-    const chunks = [];
     let received = 0;
     let lastUpdate = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.length;
-
-      if (received - lastUpdate > 2 * 1024 * 1024) {
-        lastUpdate = received;
-        await updateProgress(recording.id, filename, received, totalSize, 'downloading');
+    const tracker = new TransformStream({
+      transform(chunk, controller) {
+        controller.enqueue(chunk);
+        received += chunk.byteLength;
+        if (received - lastUpdate > 2 * 1024 * 1024) {
+          lastUpdate = received;
+          updateProgress(recording.id, filename, received, totalSize, 'downloading');
+        }
       }
-    }
+    });
+
+    const blob = await new Response(
+      videoResp.body.pipeThrough(tracker)
+    ).blob();
 
     await updateProgress(recording.id, filename, totalSize, totalSize, 'saving');
 
-    const blob = new Blob(chunks);
     const blobUrl = URL.createObjectURL(blob);
 
     const downloadId = await chrome.downloads.download({
