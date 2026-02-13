@@ -230,7 +230,7 @@ async function downloadRecording(recording, token) {
     const root = await navigator.storage.getDirectory();
     const tmpName = `lrs_${recording.id}.tmp`;
     const fileHandle = await root.getFileHandle(tmpName, { create: true });
-    const accessHandle = await fileHandle.createSyncAccessHandle();
+    const writable = await fileHandle.createWritable();
 
     const reader = videoResp.body.getReader();
     let received = 0;
@@ -239,7 +239,7 @@ async function downloadRecording(recording, token) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      accessHandle.write(value);
+      await writable.write(value);
       received += value.byteLength;
 
       if (received - lastUpdate > 2 * 1024 * 1024) {
@@ -248,8 +248,7 @@ async function downloadRecording(recording, token) {
       }
     }
 
-    accessHandle.flush();
-    accessHandle.close();
+    await writable.close();
 
     await updateProgress(recording.id, filename, totalSize, totalSize, 'saving');
 
