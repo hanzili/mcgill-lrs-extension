@@ -222,40 +222,51 @@ async function downloadRecording(recording, token) {
       || '0'
     );
 
-    // Stream with progress tracking via TransformStream
-    // (avoids manually accumulating chunks in JS — lets the browser
-    //  handle buffering natively, which is far more memory-efficient
-    //  for large files like 1GB+ lecture recordings)
+    // Stream to OPFS (Origin Private File System) — each chunk is written
+    // directly to disk, so we never hold the full file in memory. This is
+    // critical for 1GB+ lecture recordings that would crash the service worker.
     await updateProgress(recording.id, filename, 0, totalSize, 'downloading');
 
+    const root = await navigator.storage.getDirectory();
+    const tmpName = `lrs_${recording.id}.tmp`;
+    const fileHandle = await root.getFileHandle(tmpName, { create: true });
+    const accessHandle = await fileHandle.createSyncAccessHandle();
+
+    const reader = videoResp.body.getReader();
     let received = 0;
     let lastUpdate = 0;
-    const tracker = new TransformStream({
-      transform(chunk, controller) {
-        controller.enqueue(chunk);
-        received += chunk.byteLength;
-        if (received - lastUpdate > 2 * 1024 * 1024) {
-          lastUpdate = received;
-          updateProgress(recording.id, filename, received, totalSize, 'downloading');
-        }
-      }
-    });
 
-    const blob = await new Response(
-      videoResp.body.pipeThrough(tracker)
-    ).blob();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      accessHandle.write(value);
+      received += value.byteLength;
+
+      if (received - lastUpdate > 2 * 1024 * 1024) {
+        lastUpdate = received;
+        await updateProgress(recording.id, filename, received, totalSize, 'downloading');
+      }
+    }
+
+    accessHandle.flush();
+    accessHandle.close();
 
     await updateProgress(recording.id, filename, totalSize, totalSize, 'saving');
 
-    const blobUrl = URL.createObjectURL(blob);
+    // getFile() returns a disk-backed File reference — no memory copy
+    const file = await fileHandle.getFile();
+    const blobUrl = URL.createObjectURL(file);
 
     const downloadId = await chrome.downloads.download({
       url: blobUrl,
       filename: `McGill-Lectures/${filename}`
     });
 
-    // Revoke blob URL after 2 minutes (gives Chrome time to finish writing)
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+    // Clean up OPFS temp file and blob URL after Chrome finishes writing
+    setTimeout(async () => {
+      URL.revokeObjectURL(blobUrl);
+      try { await root.removeEntry(tmpName); } catch {}
+    }, 120000);
 
     await updateProgress(recording.id, filename, totalSize, totalSize, 'complete', downloadId);
     return { ok: true, downloadId, filename };
