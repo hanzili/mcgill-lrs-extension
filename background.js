@@ -19,15 +19,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     fetchRecordings(msg.token, msg.courseId).then(sendResponse);
     return true;
   }
-  if (msg.type === 'DOWNLOAD_STATUS') {
-    console.log('[LRS-PAGE]', msg.message);
-    return;
-  }
+  if (msg.type === 'DOWNLOAD_STATUS') return;
   if (msg.type === 'DOWNLOAD_PROGRESS') {
-    console.log('[LRS-PROGRESS]', msg.progress.filename,
-      msg.progress.pct !== null ? msg.progress.pct + '%' : '',
-      msg.progress.complete ? 'COMPLETE' : '',
-      msg.progress.error || '');
     chrome.storage.local.set({ downloadProgress: msg.progress });
     return;
   }
@@ -118,8 +111,6 @@ async function fetchRecordings(token, courseId) {
     const recordings = await resp.json();
 
     if (recordings.length > 0) {
-      console.log('[LRS] Recording fields:', Object.keys(recordings[0]));
-      console.log('[LRS] Full first recording:', JSON.stringify(recordings[0], null, 2));
       const data = await chrome.storage.local.get('courses');
       const courses = data.courses || {};
       if (courses[courseId]) {
@@ -222,7 +213,6 @@ async function downloadRecording(recording) {
       return { ok: false, error: 'Open any McGill LRS page first' };
     }
 
-    console.log(`[LRS] Starting download: ${filename} (${dlId})`);
 
     // Inject a fresh bridge in ISOLATED world so progress messages reach
     // the service worker even if the declarative bridge.js is orphaned
@@ -465,7 +455,6 @@ async function downloadRecording(recording) {
       if (r.result?.role) return r.result.role;
       return 'skip';
     });
-    console.log(`[LRS] Frame results: [${summary.join(', ')}]`);
 
     const hasFetcher = results.some(r => r.result?.role === 'fetcher');
     if (!hasFetcher) {
@@ -505,47 +494,3 @@ async function downloadAll(recordings) {
   return { ok: true, count, total: recordings.length, filenames };
 }
 
-// ─── Auto-diagnostic ─────────────────────────────────
-
-async function runDiagnostic() {
-  const data = await chrome.storage.local.get(['courses', 'lastCourseId']);
-  if (!data.lastCourseId || !data.courses?.[data.lastCourseId]) return;
-
-  const course = data.courses[data.lastCourseId];
-  if (course.exp && Date.now() / 1000 > course.exp) return;
-
-  const tabId = await findMcGillTab();
-  if (!tabId) { console.log('[LRS-DIAG] No McGill tab'); return; }
-
-  const result = await fetchRecordings(course.token, data.lastCourseId);
-  if (!result.ok || !result.recordings?.length) return;
-
-  let mediaUrl;
-  try { mediaUrl = await resolveMediaUrl(result.recordings[0]); }
-  catch { return; }
-
-  console.log('[LRS-DIAG] Testing CDN fetch from LRS frame...');
-  const results = await runInAllFrames(tabId, async (url) => {
-    if (window.location.hostname !== 'lrs.mcgill.ca') return null;
-    try {
-      const resp = await fetch(url, { headers: { 'Range': 'bytes=0-1023' } });
-      const body = await resp.arrayBuffer();
-      return {
-        status: resp.status,
-        contentType: resp.headers.get('content-type'),
-        contentRange: resp.headers.get('content-range'),
-        bodySize: body.byteLength
-      };
-    } catch (e) {
-      return { error: e.message };
-    }
-  }, [mediaUrl]);
-
-  const diagResult = results.find(r => r.result !== null)?.result || null;
-  console.log('[LRS-DIAG] Result:', JSON.stringify(diagResult, null, 2));
-
-  const diag = { timestamp: new Date().toISOString(), result: diagResult };
-  await chrome.storage.local.set({ diagnostic: diag });
-}
-
-runDiagnostic();

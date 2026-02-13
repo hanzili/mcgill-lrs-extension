@@ -23,7 +23,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
     if (changes.downloadProgress) {
-      console.log('[popup] storage changed: downloadProgress', changes.downloadProgress.newValue?.filename);
       updateDownloadProgress(changes.downloadProgress.newValue);
     }
   });
@@ -164,7 +163,6 @@ function updateDownloadProgress(progress) {
   if (!progress?.filename) return;
 
   const recId = downloadMap[progress.filename];
-  console.log('[popup] progress:', progress.filename, progress.pct, 'recId:', recId, 'map:', Object.keys(downloadMap));
   if (!recId) return;
 
   const progressEl = $(`#progress-${recId}`);

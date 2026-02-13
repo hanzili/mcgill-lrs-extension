@@ -1,18 +1,23 @@
 # McGill LRS Downloader
 
-A Chrome extension that downloads lecture recordings from McGill's Lecture Recording System (LRS). Just open any course's recordings page on myCourses — the extension automatically captures your session and generates download scripts you can run in Terminal.
-
-![Screenshot](assets/screenshot.png)
+A Chrome extension that downloads lecture recordings from McGill's Lecture Recording System (LRS). Downloads play natively on macOS, Windows, and Linux — no additional software needed.
 
 ## Features
 
 - **Zero setup** — automatically captures your authentication token when you visit a course's LRS page
 - **One-click downloads** — download individual lectures or all at once
-- **Reliable large-file downloads** — generates curl scripts that handle 1GB+ lecture files without browser memory limits
-- **Smart file naming** — saves as `CourseName_Date_Instructor.ts` in `~/Downloads/McGill-Lectures/`
-- **Batch support** — "Download all" generates a single script with all lectures
+- **Playable MP4 files** — in-browser remuxing produces standard H.264+AAC MP4 files that play in QuickTime, Windows Media Player, VLC, etc.
+- **Real-time progress** — live percentage and MB counter in the popup while downloading
+- **Smart file naming** — saves as `CourseName_Date_Instructor.mp4`
+- **Cross-platform** — works on macOS, Windows, Linux, and ChromeOS
 
 ## Installation
+
+### From Chrome Web Store
+
+*(Coming soon)*
+
+### From source (Developer mode)
 
 1. Clone or download this repository
 2. Open `chrome://extensions` in Chrome
@@ -23,53 +28,35 @@ A Chrome extension that downloads lecture recordings from McGill's Lecture Recor
 ## Usage
 
 1. Go to [myCourses](https://mycourses2.mcgill.ca) and open any course
-2. Navigate to **Lecture Recordings** (Content → Lecture Recordings)
+2. Navigate to **Lecture Recordings** (Content > Lecture Recordings)
 3. Click the extension icon — it should show **Active** and list all recordings
 4. Click the download button on any recording, or hit **Download all**
-5. A `.command` script will be saved to your Downloads folder
-6. Run it:
-   ```bash
-   cd ~/Downloads/McGill-Lectures
-   chmod +x *.command
-   open *.command
-   ```
-
-Files are saved to `~/Downloads/McGill-Lectures/`.
-
-### Standalone script (alternative)
-
-A standalone bash script is also included for power users who prefer the command line:
-
-```bash
-# Requires: curl, jq, ffmpeg
-./mcgill-lrs-dl.sh           # shows instructions to get your JWT token
-./mcgill-lrs-dl.sh <TOKEN>   # downloads recordings interactively
-```
-
-This script also converts `.ts` files to `.mp4` automatically via ffmpeg.
+5. Keep the lecture tab open while downloading — the file will appear in Chrome's download bar when ready
 
 ## How It Works
 
-The extension uses a multi-layer approach to work within Chrome's Manifest V3 constraints:
+The extension works within Chrome's Manifest V3 constraints using a multi-layer approach:
 
-1. **Token capture** — A content script running in the page's JS context (`MAIN` world) patches `fetch` and `XMLHttpRequest` to intercept JWT tokens sent to McGill's LRS API. A bridge script in the `ISOLATED` world relays these to the background service worker. A `webRequest` listener acts as a backup capture method.
+1. **Token capture** — A content script in the page's MAIN world patches `fetch`/`XHR` to intercept JWT tokens sent to McGill's LRS API. A bridge script relays these to the service worker.
 
-2. **Recording discovery** — The service worker uses the captured JWT to call the LRS API and fetch the list of recordings for the course.
+2. **Recording discovery** — The service worker uses the captured JWT to call the LRS API and fetch the course's recording list.
 
-3. **Script generation** — Each recording has an HLS manifest pointing to a `.ts` media file on McGill's CDN. The service worker resolves the direct media URL from the manifest, then generates a shell script with curl commands that download the files reliably — no browser memory limits, no service worker timeouts.
+3. **In-page download** — The video is fetched from the CDN inside the LRS iframe (which has the correct Origin header). The raw MPEG-TS stream is remuxed to MP4 in the browser using a custom pure-JS remuxer, then triggered as a download via `<a download>`.
+
+4. **Progress tracking** — Download progress flows from the page context through a bridge script to the service worker, which stores it in `chrome.storage` for the popup to display in real time.
 
 ## Project Structure
 
 ```
-├── manifest.json        # Extension config (Manifest V3)
-├── background.js        # Service worker: token storage, API calls, script generation
-├── intercept.js         # Content script (MAIN world): patches fetch/XHR
-├── bridge.js            # Content script (ISOLATED world): relays tokens
-├── popup.html           # Extension popup UI
-├── popup.css            # Styles (dark theme)
-├── popup.js             # Popup logic
-├── mcgill-lrs-dl.sh     # Standalone download script (alternative to extension)
-└── icons/               # Extension icons (16, 48, 128px)
+manifest.json      Extension config (Manifest V3)
+background.js      Service worker: token storage, API calls, download orchestration
+intercept.js       Content script (MAIN world): patches fetch/XHR to capture tokens
+bridge.js          Content script (ISOLATED world): relays messages to service worker
+remux.js           Pure JS MPEG-TS to MP4 remuxer (H.264 video + AAC audio)
+popup.html         Extension popup UI
+popup.css          Styles
+popup.js           Popup logic and progress display
+icons/             Extension icons (16, 48, 128px)
 ```
 
 ## License
