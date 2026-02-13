@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 440px; height: 280px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+}
+.container {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+}
+.icon-row {
+  display: flex; align-items: center; gap: 12px;
+}
+.icon-row svg { width: 40px; height: 40px; }
+h1 {
+  font-size: 28px; font-weight: 700; text-align: center;
+  background: linear-gradient(135deg, #fff 0%, #a8d8ea 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+p {
+  font-size: 14px; color: rgba(255,255,255,0.6); text-align: center; max-width: 340px; line-height: 1.5;
+}
+.tags { display: flex; gap: 8px; }
+.tag {
+  font-size: 11px; padding: 4px 12px; border-radius: 20px;
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="icon-row">
+    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5">
+      <path d="M4 4h16v16H4z" rx="2"/><path d="M9 9l3 2 3-2v7l-3-2-3 2V9z"/>
+    </svg>
+    <h1>McGill LRS<br>Downloader</h1>
+  </div>
+  <p>One-click lecture recording downloads with real-time progress</p>
+  <div class="tags">
+    <span class="tag">MP4 Video + Audio</span>
+    <span class="tag">Batch Download</span>
+    <span class="tag">Cross-platform</span>
+  </div>
+</div>
+</body>
+</html>

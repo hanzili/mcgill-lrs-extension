@@ -1,0 +1,77 @@
+CHROME WEB STORE LISTING — McGill LRS Downloader
+==================================================
+
+DESCRIPTION
+-----------
+Download lecture recordings from McGill's Lecture Recording System (LRS) with a single click.
+
+FEATURES
+• One-click downloads — download individual lectures or all at once
+• Playable MP4 files — standard H.264 video + AAC audio that plays in QuickTime, VLC, Windows Media Player, and any browser
+• Real-time progress — see download percentage and MB counter while downloading
+• Smart file naming — saves as CourseName_Date_Instructor.mp4
+• Zero setup — just visit your course's LRS page and the extension activates automatically
+
+HOW TO USE
+1. Go to myCourses (mycourses2.mcgill.ca) and open any course
+2. Navigate to Content > Lecture Recordings
+3. Click the extension icon — it shows "Active" and lists all recordings
+4. Click the download button on any recording, or hit "Download all"
+5. Files appear in your Chrome downloads when ready
+
+HOW IT WORKS
+The extension captures your existing authentication when you visit the LRS page, fetches the lecture video stream, and remuxes it from MPEG-TS to a standard MP4 file — all inside your browser. No external servers, no extra software. Your credentials never leave your browser.
+
+REQUIREMENTS
+• A McGill myCourses account with access to courses that have lecture recordings
+• Keep the lecture recordings tab open while downloading
+
+Works on macOS, Windows, Linux, and ChromeOS.
+
+
+FORM FIELDS
+-----------
+Category:           Education
+Language:           English
+
+
+FILES TO UPLOAD
+---------------
+Store icon (128x128):       assets/store-icon-128.png
+Screenshot (1280x800):      assets/screenshot-store-flat.png
+Small promo tile (440x280): assets/promo-tile.png
+
+
+URLS
+----
+Homepage URL:       https://github.com/hanzili/mcgill-lrs-extension
+Support URL:        https://github.com/hanzili/mcgill-lrs-extension/issues
+Privacy policy URL: https://github.com/hanzili/mcgill-lrs-extension/blob/main/PRIVACY.md
+
+
+PERMISSION JUSTIFICATIONS
+-------------------------
+storage justification:
+"Stores the captured authentication tokens and course metadata locally so users don't need to re-authenticate each time they open the popup. Also stores download progress state so the popup can display real-time progress updates."
+
+webRequest justification:
+"Reads the Authorization header from requests to McGill's LRS API (lrswapi.campus.mcgill.ca) to capture the user's authentication token. This is a backup capture method that ensures reliable token detection even when the content script injection is delayed."
+
+scripting justification:
+"Injects a download script into the lecture recordings page to fetch the video stream and remux it to MP4. The download must run in the page context to include the correct Origin header required by McGill's CDN. Also injects a message bridge to relay download progress back to the extension."
+
+
+PRIVACY PRACTICES
+-----------------
+Single purpose description:
+"Downloads lecture recordings from McGill University's Lecture Recording System as MP4 files."
+
+Host permissions justification:
+"Requires access to mcgill.ca to capture the authentication token from the LRS page and fetch lecture video streams from McGill's CDN."
+
+Data use disclosures:
+- Does NOT collect, transmit, or store any personal data
+- All processing happens locally in the browser
+- Does not sell data to third parties
+- Does not use data for purposes unrelated to the extension's core functionality
+- Does not use data for creditworthiness or lending purposes

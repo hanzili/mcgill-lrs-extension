@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 1280px; height: 800px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+}
+.container {
+  display: flex; align-items: center; gap: 80px;
+}
+.text-side {
+  color: white; max-width: 440px;
+}
+.text-side h1 {
+  font-size: 42px; font-weight: 700; line-height: 1.2; margin-bottom: 16px;
+  background: linear-gradient(135deg, #fff 0%, #a8d8ea 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.text-side p {
+  font-size: 18px; color: rgba(255,255,255,0.7); line-height: 1.6; margin-bottom: 24px;
+}
+.features {
+  list-style: none; display: flex; flex-direction: column; gap: 12px;
+}
+.features li {
+  font-size: 15px; color: rgba(255,255,255,0.85); display: flex; align-items: center; gap: 10px;
+}
+.features li::before {
+  content: ''; display: inline-block; width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(76, 175, 80, 0.3); border: 1.5px solid #4caf50; flex-shrink: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='none' stroke='%234caf50' stroke-width='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4 8.5l2.5 2.5 5.5-6'/%3E%3C/svg%3E");
+  background-size: 14px; background-repeat: no-repeat; background-position: center;
+}
+.popup-frame {
+  width: 380px; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 25px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+  background: #1a1a1a;
+}
+.popup-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.popup-header-left { display: flex; align-items: center; gap: 8px; }
+.popup-logo { width: 22px; height: 22px; opacity: 0.9; }
+.popup-title { color: #e0e0e0; font-size: 14px; font-weight: 600; }
+.popup-badge {
+  font-size: 11px; padding: 3px 10px; border-radius: 20px;
+  background: rgba(76, 175, 80, 0.15); color: #4caf50; border: 1px solid rgba(76, 175, 80, 0.3);
+  font-weight: 600;
+}
+.course-header { padding: 14px 16px 4px; }
+.course-name { color: #f0f0f0; font-size: 20px; font-weight: 700; }
+.course-meta { color: rgba(255,255,255,0.45); font-size: 13px; margin-top: 2px; }
+.rec-list { padding: 8px 0; }
+.rec-item {
+  display: flex; align-items: center; padding: 10px 16px; gap: 14px;
+}
+.rec-item:hover { background: rgba(255,255,255,0.03); }
+.rec-date { min-width: 70px; }
+.rec-date-day { color: #e0e0e0; font-size: 14px; font-weight: 600; }
+.rec-date-time { color: rgba(255,255,255,0.4); font-size: 12px; }
+.rec-info { flex: 1; }
+.rec-instructor { color: #d0d0d0; font-size: 14px; }
+.rec-duration { color: rgba(255,255,255,0.4); font-size: 12px; }
+.rec-progress-text { color: #64b5f6; font-size: 12px; }
+.rec-progress-text.done { color: #4caf50; }
+.progress-bar {
+  height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 4px;
+}
+.progress-fill {
+  height: 100%; background: #64b5f6; border-radius: 2px;
+}
+.btn-dl {
+  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,0.15);
+  background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.btn-dl svg { width: 16px; height: 16px; stroke: rgba(255,255,255,0.5); }
+.btn-dl.complete { border-color: rgba(76,175,80,0.4); }
+.btn-dl.complete svg { stroke: #4caf50; }
+.btn-dl.downloading { border-color: rgba(100,181,246,0.4); }
+.btn-dl.downloading svg { stroke: #64b5f6; }
+.actions-bar { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.06); }
+.btn-primary {
+  width: 100%; padding: 10px; background: #2563eb; color: white; border: none;
+  border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn-primary svg { width: 14px; height: 14px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="text-side">
+    <h1>Download McGill Lectures</h1>
+    <p>One-click download of lecture recordings from McGill's LRS. Files play natively on any device.</p>
+    <ul class="features">
+      <li>Playable MP4 with video + audio</li>
+      <li>Real-time download progress</li>
+      <li>Download all lectures at once</li>
+      <li>Works on macOS, Windows & Linux</li>
+    </ul>
+  </div>
+  <div class="popup-frame">
+    <div class="popup-header">
+      <div class="popup-header-left">
+        <svg class="popup-logo" viewBox="0 0 24 24" fill="none" stroke="#e0e0e0" stroke-width="1.5">
+          <path d="M4 4h16v16H4z" rx="2"/><path d="M9 9l3 2 3-2v7l-3-2-3 2V9z"/>
+        </svg>
+        <span class="popup-title">LRS Downloader</span>
+      </div>
+      <span class="popup-badge">Active</span>
+    </div>
+    <div class="course-header">
+      <div class="course-name">MGPO-364-001</div>
+      <div class="course-meta">2025-WINTER · 22 lectures</div>
+    </div>
+    <div class="rec-list">
+      <div class="rec-item">
+        <div class="rec-date"><div class="rec-date-day">Jan 6</div><div class="rec-date-time">10:00 AM</div></div>
+        <div class="rec-info">
+          <div class="rec-instructor">Jared Lee</div>
+          <div><span class="rec-progress-text done">Complete!</span></div>
+        </div>
+        <div class="btn-dl complete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8.5l3.5 3.5 6.5-7"/></svg></div>
+      </div>
+      <div class="rec-item">
+        <div class="rec-date"><div class="rec-date-day">Jan 8</div><div class="rec-date-time">10:00 AM</div></div>
+        <div class="rec-info">
+          <div class="rec-instructor">Jared Lee</div>
+          <div>
+            <span class="rec-progress-text">67% 174/260 MB</span>
+            <div class="progress-bar"><div class="progress-fill" style="width:67%"></div></div>
+          </div>
+        </div>
+        <div class="btn-dl downloading"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6" stroke-dasharray="28" stroke-dashoffset="8"/></svg></div>
+      </div>
+      <div class="rec-item">
+        <div class="rec-date"><div class="rec-date-day">Jan 13</div><div class="rec-date-time">11:30 AM</div></div>
+        <div class="rec-info"><div class="rec-instructor">D2LSync</div><div><span class="rec-duration">1h 30m</span></div></div>
+        <div class="btn-dl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M4 8l4 4 4-4M3 13h10"/></svg></div>
+      </div>
+      <div class="rec-item">
+        <div class="rec-date"><div class="rec-date-day">Jan 15</div><div class="rec-date-time">10:00 AM</div></div>
+        <div class="rec-info"><div class="rec-instructor">Jared Lee</div><div><span class="rec-duration">1h 30m</span></div></div>
+        <div class="btn-dl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M4 8l4 4 4-4M3 13h10"/></svg></div>
+      </div>
+      <div class="rec-item">
+        <div class="rec-date"><div class="rec-date-day">Jan 20</div><div class="rec-date-time">10:00 AM</div></div>
+        <div class="rec-info"><div class="rec-instructor">Jared Lee</div><div><span class="rec-duration">1h 30m</span></div></div>
+        <div class="btn-dl"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M4 8l4 4 4-4M3 13h10"/></svg></div>
+      </div>
+    </div>
+    <div class="actions-bar">
+      <button class="btn-primary">
+        Download all
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M4 8l4 4 4-4M3 13h10"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
