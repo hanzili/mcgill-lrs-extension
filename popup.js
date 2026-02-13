@@ -5,6 +5,7 @@ let state = { courses: {}, lastCourseId: null, downloads: {} };
 let recordings = [];
 let currentToken = null;
 let currentCourseId = null;
+const downloadMap = {}; // filename → rec.id (tracks which download updates which row)
 
 // ─── Init ────────────────────────────────────────────
 
@@ -20,6 +21,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         state = fresh;
         if (!currentToken) tryLoadFromState();
       });
+    }
+    if (changes.downloadProgress) {
+      console.log('[popup] storage changed: downloadProgress', changes.downloadProgress.newValue?.filename);
+      updateDownloadProgress(changes.downloadProgress.newValue);
     }
   });
 });
@@ -155,6 +160,42 @@ function getIcon(status) {
   }
 }
 
+function updateDownloadProgress(progress) {
+  if (!progress?.filename) return;
+
+  const recId = downloadMap[progress.filename];
+  console.log('[popup] progress:', progress.filename, progress.pct, 'recId:', recId, 'map:', Object.keys(downloadMap));
+  if (!recId) return;
+
+  const progressEl = $(`#progress-${recId}`);
+  if (!progressEl) return;
+
+  if (progress.error) {
+    progressEl.innerHTML = `<span class="rec-progress-text failed">Error: ${progress.error}</span>`;
+    const btn = $(`.btn-dl[data-id="${recId}"]`);
+    if (btn) { btn.innerHTML = getIcon('failed'); btn.className = 'btn-dl failed'; }
+    return;
+  }
+
+  if (progress.complete) {
+    progressEl.innerHTML = '<span class="rec-progress-text done">Complete!</span>';
+    const btn = $(`.btn-dl[data-id="${recId}"]`);
+    if (btn) { btn.innerHTML = getIcon('done'); btn.className = 'btn-dl complete'; }
+    return;
+  }
+
+  const receivedMB = (progress.received / 1e6).toFixed(0);
+  const totalMB = progress.total > 0 ? (progress.total / 1e6).toFixed(0) : '?';
+  const pctText = progress.pct !== null ? `${progress.pct}%` : '';
+  const sizeText = `${receivedMB}/${totalMB} MB`;
+  const barPct = progress.pct !== null ? progress.pct : 0;
+
+  progressEl.innerHTML = `
+    <span class="rec-progress-text">${pctText} ${sizeText}</span>
+    <div class="progress-bar"><div class="progress-fill" style="width:${barPct}%"></div></div>
+  `;
+}
+
 // ─── Downloads ───────────────────────────────────────
 
 async function downloadSingle(index, btn) {
@@ -163,8 +204,14 @@ async function downloadSingle(index, btn) {
 
   const progressEl = $(`#progress-${rec.id}`);
 
+  // Pre-populate downloadMap BEFORE sending — progress events may arrive
+  // before the sendMessage response returns
+  const expectedFilename = buildFilename(rec);
+  downloadMap[expectedFilename] = rec.id;
+
   btn.innerHTML = getIcon('loading');
-  if (progressEl) progressEl.innerHTML = '<span class="rec-progress-text">Preparing script...</span>';
+  btn.className = 'btn-dl downloading';
+  if (progressEl) progressEl.innerHTML = '<span class="rec-progress-text">Downloading...</span>';
 
   const result = await sendMessage({
     type: 'DOWNLOAD_RECORDING',
@@ -172,9 +219,10 @@ async function downloadSingle(index, btn) {
   });
 
   if (result?.ok) {
-    btn.innerHTML = getIcon('done');
-    btn.className = 'btn-dl complete';
-    if (progressEl) progressEl.innerHTML = '<span class="rec-progress-text done">Script saved</span>';
+    // Also store the actual filename from background (in case it differs)
+    if (result.filename) downloadMap[result.filename] = rec.id;
+    if (progressEl) progressEl.innerHTML = '<span class="rec-progress-text">Starting...</span>';
+    showKeepOpenHint();
   } else {
     btn.innerHTML = getIcon('failed');
     btn.className = 'btn-dl failed';
@@ -184,8 +232,21 @@ async function downloadSingle(index, btn) {
 
 async function downloadAll() {
   const btn = $('#downloadAllBtn');
-  btn.innerHTML = 'Preparing script...';
+  btn.innerHTML = 'Starting downloads...';
   btn.disabled = true;
+
+  // Pre-populate downloadMap for ALL recordings BEFORE sending —
+  // background processes sequentially, and progress events arrive
+  // before downloadAll returns.
+  for (const rec of recordings) {
+    const fname = buildFilename(rec);
+    downloadMap[fname] = rec.id;
+    const rowBtn = $(`.btn-dl[data-id="${rec.id}"]`);
+    if (rowBtn) { rowBtn.innerHTML = getIcon('loading'); rowBtn.className = 'btn-dl downloading'; }
+    const rowProgress = $(`#progress-${rec.id}`);
+    if (rowProgress) rowProgress.innerHTML = '<span class="rec-progress-text">Queued...</span>';
+  }
+  showKeepOpenHint();
 
   const result = await sendMessage({
     type: 'DOWNLOAD_ALL',
@@ -193,19 +254,30 @@ async function downloadAll() {
   });
 
   if (result?.ok) {
-    btn.innerHTML = `Script saved \u2714`;
-    // Show instructions
-    const hint = document.createElement('div');
-    hint.className = 'script-hint';
-    hint.innerHTML = `
-      Open <strong>McGill-Lectures/</strong> in Downloads, then:<br>
-      <code>chmod +x *.command && open *.command</code>
-    `;
-    btn.parentElement.appendChild(hint);
+    // Also store actual filenames from background (in case they differ)
+    if (result.filenames) {
+      for (const { filename, recId } of result.filenames) {
+        downloadMap[filename] = recId;
+      }
+    }
+    const msg = result.count === result.total
+      ? `${result.count} downloads started`
+      : `${result.count}/${result.total} started`;
+    btn.innerHTML = msg;
+    showKeepOpenHint();
   } else {
     btn.innerHTML = `Failed: ${result?.error || 'Unknown error'}`;
     btn.disabled = false;
   }
+}
+
+function showKeepOpenHint() {
+  if ($('#keepOpenHint')) return; // only show once
+  const hint = document.createElement('div');
+  hint.id = 'keepOpenHint';
+  hint.className = 'script-hint';
+  hint.innerHTML = 'Keep the lecture tab open — the video is downloading in the background. It will appear in Chrome\'s download bar when ready.';
+  $('#recordingsList').parentElement.appendChild(hint);
 }
 
 // ─── Helpers ─────────────────────────────────────────
@@ -215,4 +287,12 @@ function formatDuration(secs) {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// Must match background.js buildFilename exactly
+function buildFilename(recording) {
+  const date = (recording.dateTime || new Date().toISOString()).split('T')[0];
+  const instructor = (recording.instructor || 'Lecture').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+  const course = (recording.courseName || 'Recording').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
+  return `${course}_${date}_${instructor}.mp4`;
 }

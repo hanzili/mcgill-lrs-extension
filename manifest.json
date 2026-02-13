@@ -5,8 +5,8 @@
   "description": "Download lecture recordings from McGill's Lecture Recording System",
   "permissions": [
     "storage",
-    "downloads",
-    "webRequest"
+    "webRequest",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.mcgill.ca/*"

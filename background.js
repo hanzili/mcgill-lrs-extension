@@ -1,15 +1,10 @@
-// Service worker: captures JWT tokens via content script + webRequest,
-// fetches recordings, and manages downloads.
+// Service worker: captures JWT tokens, fetches recording metadata,
+// and routes downloads through the content script on the LRS page
+// (which has the correct Origin for CDN requests).
 
 const API_BASE = 'https://lrswapi.campus.mcgill.ca/api';
 
-// ─── Reset on reload (dev) ───────────────────────────
-
-chrome.runtime.onInstalled.addListener(async () => {
-  await chrome.storage.local.remove('downloads');
-});
-
-// ─── JWT Capture: Method 1 — Content script relay ────────
+// ─── Message handling ────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'TOKEN_CAPTURED') {
@@ -24,6 +19,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     fetchRecordings(msg.token, msg.courseId).then(sendResponse);
     return true;
   }
+  if (msg.type === 'DOWNLOAD_STATUS') {
+    console.log('[LRS-PAGE]', msg.message);
+    return;
+  }
+  if (msg.type === 'DOWNLOAD_PROGRESS') {
+    console.log('[LRS-PROGRESS]', msg.progress.filename,
+      msg.progress.pct !== null ? msg.progress.pct + '%' : '',
+      msg.progress.complete ? 'COMPLETE' : '',
+      msg.progress.error || '');
+    chrome.storage.local.set({ downloadProgress: msg.progress });
+    return;
+  }
   if (msg.type === 'DOWNLOAD_RECORDING') {
     downloadRecording(msg.recording).then(sendResponse);
     return true;
@@ -34,7 +41,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// ─── JWT Capture: Method 2 — webRequest (backup) ─────────
+// ─── JWT Capture: webRequest (backup) ─────────────────
 
 chrome.webRequest.onSendHeaders.addListener(
   (details) => {
@@ -90,11 +97,10 @@ function decodeJwt(token) {
 // ─── State ───────────────────────────────────────────
 
 async function getState() {
-  const data = await chrome.storage.local.get(['courses', 'lastCourseId', 'downloads']);
+  const data = await chrome.storage.local.get(['courses', 'lastCourseId']);
   return {
     courses: data.courses || {},
     lastCourseId: data.lastCourseId || null,
-    downloads: data.downloads || {}
   };
 }
 
@@ -112,6 +118,8 @@ async function fetchRecordings(token, courseId) {
     const recordings = await resp.json();
 
     if (recordings.length > 0) {
+      console.log('[LRS] Recording fields:', Object.keys(recordings[0]));
+      console.log('[LRS] Full first recording:', JSON.stringify(recordings[0], null, 2));
       const data = await chrome.storage.local.get('courses');
       const courses = data.courses || {};
       if (courses[courseId]) {
@@ -127,7 +135,18 @@ async function fetchRecordings(token, courseId) {
   }
 }
 
-// ─── Downloads ───────────────────────────────────────
+// ─── Downloads via chrome.scripting.executeScript ────
+//
+// Strategy: inject code into ALL frames of a McGill tab.
+//   - Top-level frame: listens for a postMessage carrying an ArrayBuffer
+//     from the LRS iframe, then triggers <a download> (works because
+//     <a download> is NOT blocked in top-level frames).
+//   - LRS iframe (lrs.mcgill.ca): fetches the video from the CDN
+//     (browser auto-sets the correct Origin header in MAIN world),
+//     then transfers the ArrayBuffer to the parent via postMessage
+//     (zero-copy via transferable).
+//   - If LRS IS the top-level frame (direct tab), downloads directly.
+//   - Each download gets a unique ID so concurrent downloads don't clash.
 
 async function resolveMediaUrl(recording) {
   const sources = recording.sources
@@ -166,82 +185,367 @@ async function resolveMediaUrl(recording) {
 }
 
 function buildFilename(recording) {
-  const date = recording.dateTime.split('T')[0];
+  const date = (recording.dateTime || new Date().toISOString()).split('T')[0];
   const instructor = (recording.instructor || 'Lecture').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
   const course = (recording.courseName || 'Recording').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-  return `${course}_${date}_${instructor}.ts`;
+  return `${course}_${date}_${instructor}.mp4`;
 }
 
-// Download a single recording — generates a curl script
+async function findMcGillTab() {
+  const tabs = await chrome.tabs.query({ url: 'https://*.mcgill.ca/*' });
+  if (tabs.length === 0) return null;
+  // Prefer tabs with LRS or myCourses content
+  const preferred = tabs.find(t =>
+    t.url.includes('lrs.mcgill.ca') || t.url.includes('mycourses')
+  );
+  return (preferred || tabs[0]).id;
+}
+
+// Inject a function into ALL frames of a McGill tab, running in MAIN world.
+async function runInAllFrames(tabId, func, args = []) {
+  return chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    world: 'MAIN',
+    func,
+    args
+  });
+}
+
 async function downloadRecording(recording) {
   try {
     const mediaUrl = await resolveMediaUrl(recording);
     const filename = buildFilename(recording);
+    const dlId = 'dl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
 
-    const script = generateScript([{ mediaUrl, filename }]);
-    return await saveScript(script, `download_${filename.replace('.ts', '')}.command`);
+    const tabId = await findMcGillTab();
+    if (!tabId) {
+      return { ok: false, error: 'Open any McGill LRS page first' };
+    }
+
+    console.log(`[LRS] Starting download: ${filename} (${dlId})`);
+
+    // Inject a fresh bridge in ISOLATED world so progress messages reach
+    // the service worker even if the declarative bridge.js is orphaned
+    // (happens when the extension is reloaded while the tab is open).
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: 'ISOLATED',
+      func: () => {
+        if (window.__LRS_BRIDGE_INJECTED) return;
+        window.__LRS_BRIDGE_INJECTED = true;
+        window.addEventListener('message', (event) => {
+          if (event.source !== window) return;
+          try {
+            if (event.data?.type === '__LRS_PROGRESS__') {
+              chrome.runtime.sendMessage({
+                type: 'DOWNLOAD_PROGRESS',
+                progress: {
+                  filename: event.data.filename,
+                  pct: event.data.pct,
+                  received: event.data.received,
+                  total: event.data.total,
+                  complete: event.data.complete || false,
+                  error: event.data.error || null
+                }
+              });
+            }
+            if (event.data?.type === '__LRS_STATUS__') {
+              chrome.runtime.sendMessage({
+                type: 'DOWNLOAD_STATUS',
+                message: event.data.message
+              });
+            }
+          } catch (e) { /* extension context invalidated — ignore */ }
+        });
+      }
+    });
+
+    // Inject TS→MP4 remuxer into all frames (MAIN world)
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: 'MAIN',
+      files: ['remux.js']
+    });
+
+    const results = await runInAllFrames(tabId, (url, fname, downloadId) => {
+      // Helper: log to page console AND relay to SW via bridge.js
+      function report(msg) {
+        console.log(msg);
+        window.postMessage({ type: '__LRS_STATUS__', message: msg }, '*');
+      }
+
+      // ── Detect frame role (try/catch for cross-origin safety) ──
+      let isTopFrame;
+      try { isTopFrame = (window.self === window.top); }
+      catch { isTopFrame = false; }
+      const isLrsFrame = (window.location.hostname === 'lrs.mcgill.ca');
+
+      if (!isTopFrame && !isLrsFrame) return null;
+
+      // ── Top-level frame (non-LRS): listen for data from LRS iframe ──
+      if (isTopFrame && !isLrsFrame) {
+        report('[LRS] Listener ready on ' + window.location.hostname + ' for ' + downloadId);
+
+        // Auto-cleanup after 15 min if fetch never completes
+        const timer = setTimeout(() => {
+          window.removeEventListener('message', handler);
+          report('[LRS] Listener timed out (15 min): ' + downloadId);
+        }, 15 * 60 * 1000);
+
+        function handler(e) {
+          if (e.data?.type !== '__LRS_DOWNLOAD__') return;
+          if (e.data.downloadId !== downloadId) return; // match by unique ID
+          window.removeEventListener('message', handler);
+          clearTimeout(timer);
+
+          // Handle error from LRS iframe
+          if (e.data.error) {
+            report('[LRS] ERROR from LRS frame: ' + e.data.error);
+            return;
+          }
+
+          report('[LRS] Received buffer (' + (e.data.buffer?.byteLength / 1e6).toFixed(1) + ' MB), triggering download...');
+
+          try {
+            // Remux TS→MP4 for native playback in QuickTime/Windows Media Player
+            let videoBuffer = e.data.buffer;
+            if (typeof __LRS_REMUX === 'function') {
+              try {
+                report('[LRS] Remuxing TS → MP4...');
+                videoBuffer = __LRS_REMUX(e.data.buffer);
+                report('[LRS] Remux done: ' + (videoBuffer.byteLength / 1e6).toFixed(1) + ' MB');
+              } catch (remuxErr) {
+                report('[LRS] Remux failed (' + remuxErr.message + '), saving as TS');
+              }
+            }
+            const blob = new Blob([videoBuffer], { type: 'video/mp4' });
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = e.data.filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => { URL.revokeObjectURL(blobUrl); a.remove(); }, 30000);
+            report('[LRS] Download triggered: ' + e.data.filename + ' (' + (blob.size / 1e6).toFixed(1) + ' MB)');
+          } catch (err) {
+            report('[LRS] ERROR creating download: ' + err.message);
+          }
+        }
+
+        window.addEventListener('message', handler);
+        return { role: 'listener' };
+      }
+
+      // ── LRS frame: fetch video from CDN and transfer to parent ──
+      if (isLrsFrame) {
+        report('[LRS] Fetching from LRS frame: ' + fname);
+
+        (async () => {
+          try {
+            const r = await fetch(url, { headers: { 'Range': 'bytes=0-' } });
+            report('[LRS] CDN response: status=' + r.status + ' ok=' + r.ok);
+            if (!r.ok && r.status !== 206) throw new Error('CDN ' + r.status);
+
+            const totalStr = r.headers.get('content-range')?.split('/')[1]
+                          || r.headers.get('content-length');
+            const totalBytes = totalStr ? +totalStr : 0;
+            if (totalBytes > 0) report('[LRS] Video size: ~' + (totalBytes / 1e6).toFixed(0) + ' MB');
+
+            // Stream response with progress reporting
+            const reader = r.body.getReader();
+            const chunks = [];
+            let received = 0;
+            let lastProgressAt = 0;
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              received += value.byteLength;
+
+              const now = Date.now();
+              if (now - lastProgressAt > 2000) {
+                lastProgressAt = now;
+                const pct = totalBytes > 0 ? Math.round(received / totalBytes * 100) : null;
+                const msg = pct !== null
+                  ? '[LRS] ' + pct + '% — ' + (received / 1e6).toFixed(0) + '/' + (totalBytes / 1e6).toFixed(0) + ' MB'
+                  : '[LRS] Downloaded ' + (received / 1e6).toFixed(0) + ' MB';
+                report(msg);
+                window.postMessage({
+                  type: '__LRS_PROGRESS__',
+                  filename: fname,
+                  pct: pct,
+                  received: received,
+                  total: totalBytes
+                }, '*');
+              }
+            }
+
+            // Concatenate chunks into a single ArrayBuffer
+            report('[LRS] Fetch complete: ' + (received / 1e6).toFixed(1) + ' MB');
+            const buffer = new ArrayBuffer(received);
+            const view = new Uint8Array(buffer);
+            let offset = 0;
+            for (const chunk of chunks) {
+              view.set(chunk, offset);
+              offset += chunk.byteLength;
+            }
+
+            if (buffer.byteLength < 1000) throw new Error('Too small: ' + buffer.byteLength + ' bytes');
+
+            // Send 100% progress
+            window.postMessage({
+              type: '__LRS_PROGRESS__',
+              filename: fname,
+              pct: 100,
+              received: received,
+              total: totalBytes,
+              complete: true
+            }, '*');
+
+            if (isTopFrame) {
+              // LRS is the top-level frame — download directly
+              let videoBuffer = buffer;
+              if (typeof __LRS_REMUX === 'function') {
+                try {
+                  report('[LRS] Remuxing TS → MP4...');
+                  videoBuffer = __LRS_REMUX(buffer);
+                  report('[LRS] Remux done: ' + (videoBuffer.byteLength / 1e6).toFixed(1) + ' MB');
+                } catch (remuxErr) {
+                  report('[LRS] Remux failed (' + remuxErr.message + '), saving as TS');
+                }
+              }
+              const blob = new Blob([videoBuffer], { type: 'video/mp4' });
+              const blobUrl = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = blobUrl;
+              a.download = fname;
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(() => { URL.revokeObjectURL(blobUrl); a.remove(); }, 30000);
+              report('[LRS] Download started (direct): ' + fname);
+            } else {
+              // Transfer ArrayBuffer to parent frame (zero-copy via transferable)
+              window.top.postMessage({
+                type: '__LRS_DOWNLOAD__',
+                downloadId: downloadId,
+                buffer: buffer,
+                filename: fname
+              }, '*', [buffer]);
+              report('[LRS] ArrayBuffer transferred to parent frame');
+            }
+          } catch (e) {
+            report('[LRS] ERROR: ' + e.message);
+            window.postMessage({
+              type: '__LRS_PROGRESS__',
+              filename: fname,
+              error: e.message
+            }, '*');
+            if (!isTopFrame) {
+              try {
+                window.top.postMessage({
+                  type: '__LRS_DOWNLOAD__',
+                  downloadId: downloadId,
+                  error: e.message
+                }, '*');
+              } catch (_) {}
+            }
+          }
+        })();
+
+        return { role: 'fetcher' };
+      }
+
+      return null;
+    }, [mediaUrl, filename, dlId]);
+
+    // Log what each frame returned (including injection errors)
+    const summary = results.map(r => {
+      if (r.error) return 'ERROR: ' + r.error;
+      if (r.result?.role) return r.result.role;
+      return 'skip';
+    });
+    console.log(`[LRS] Frame results: [${summary.join(', ')}]`);
+
+    const hasFetcher = results.some(r => r.result?.role === 'fetcher');
+    if (!hasFetcher) {
+      const errors = results.filter(r => r.error).map(r => r.error);
+      const errMsg = errors.length > 0
+        ? 'Injection errors: ' + errors.join('; ')
+        : 'LRS frame not found. Open a lecture page first.';
+      return { ok: false, error: errMsg };
+    }
+
+    return { ok: true, filename, status: 'fetching' };
   } catch (e) {
     console.error('[LRS] Download failed:', e.message);
     return { ok: false, error: e.message };
   }
 }
 
-// Download all recordings — generates one script with all curl commands
 async function downloadAll(recordings) {
-  try {
-    const items = [];
-    for (const rec of recordings) {
-      try {
-        const mediaUrl = await resolveMediaUrl(rec);
-        const filename = buildFilename(rec);
-        items.push({ mediaUrl, filename });
-      } catch (e) {
-        console.error('[LRS] Skipping recording:', e.message);
+  const results = [];
+  for (const rec of recordings) {
+    try {
+      const r = await downloadRecording(rec);
+      results.push({ ...r, recId: rec.id });
+      if (r.ok) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await chrome.storage.local.get('_'); // keep SW alive
       }
+    } catch (e) {
+      results.push({ ok: false, error: e.message, recId: rec.id });
     }
-
-    if (items.length === 0) return { ok: false, error: 'No downloadable recordings' };
-
-    const course = (recordings[0].courseName || 'Recordings').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_');
-    const script = generateScript(items);
-    return await saveScript(script, `download_${course}.command`);
-  } catch (e) {
-    console.error('[LRS] Download all failed:', e.message);
-    return { ok: false, error: e.message };
   }
+  const count = results.filter(r => r.ok).length;
+  if (count === 0) return { ok: false, error: 'No downloads succeeded' };
+  // Return filename→recId pairs so popup can track progress
+  const filenames = results.filter(r => r.ok && r.filename)
+    .map(r => ({ filename: r.filename, recId: r.recId }));
+  return { ok: true, count, total: recordings.length, filenames };
 }
 
-function generateScript(items) {
-  const curls = items.map((item, i) => {
-    const num = items.length > 1 ? `(${i + 1}/${items.length}) ` : '';
-    return `echo "\\n⬇  ${num}${item.filename}"
-curl -# -L \\
-  -o "$DIR/${item.filename}" \\
-  -H "Origin: https://lrs.mcgill.ca" \\
-  -H "Referer: https://lrs.mcgill.ca/" \\
-  -H "Range: bytes=0-" \\
-  "${item.mediaUrl}"`;
-  }).join('\n\n');
+// ─── Auto-diagnostic ─────────────────────────────────
 
-  return `#!/bin/bash
-DIR="$HOME/Downloads/McGill-Lectures"
-mkdir -p "$DIR"
-echo "Saving to: $DIR"
-echo "Downloading ${items.length} recording${items.length > 1 ? 's' : ''}..."
+async function runDiagnostic() {
+  const data = await chrome.storage.local.get(['courses', 'lastCourseId']);
+  if (!data.lastCourseId || !data.courses?.[data.lastCourseId]) return;
 
-${curls}
+  const course = data.courses[data.lastCourseId];
+  if (course.exp && Date.now() / 1000 > course.exp) return;
 
-echo "\\n✓ Done! Files saved to $DIR"
-`;
+  const tabId = await findMcGillTab();
+  if (!tabId) { console.log('[LRS-DIAG] No McGill tab'); return; }
+
+  const result = await fetchRecordings(course.token, data.lastCourseId);
+  if (!result.ok || !result.recordings?.length) return;
+
+  let mediaUrl;
+  try { mediaUrl = await resolveMediaUrl(result.recordings[0]); }
+  catch { return; }
+
+  console.log('[LRS-DIAG] Testing CDN fetch from LRS frame...');
+  const results = await runInAllFrames(tabId, async (url) => {
+    if (window.location.hostname !== 'lrs.mcgill.ca') return null;
+    try {
+      const resp = await fetch(url, { headers: { 'Range': 'bytes=0-1023' } });
+      const body = await resp.arrayBuffer();
+      return {
+        status: resp.status,
+        contentType: resp.headers.get('content-type'),
+        contentRange: resp.headers.get('content-range'),
+        bodySize: body.byteLength
+      };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }, [mediaUrl]);
+
+  const diagResult = results.find(r => r.result !== null)?.result || null;
+  console.log('[LRS-DIAG] Result:', JSON.stringify(diagResult, null, 2));
+
+  const diag = { timestamp: new Date().toISOString(), result: diagResult };
+  await chrome.storage.local.set({ diagnostic: diag });
 }
 
-async function saveScript(script, filename) {
-  const url = 'data:text/plain;base64,' + btoa(script);
-
-  const downloadId = await chrome.downloads.download({
-    url,
-    filename: `McGill-Lectures/${filename}`
-  });
-
-  return { ok: true, downloadId, filename, isScript: true };
-}
+runDiagnostic();

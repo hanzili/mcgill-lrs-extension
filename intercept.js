@@ -32,7 +32,6 @@
                 : String(input);
 
       if (url.includes(TARGET)) {
-        // Check init.headers first, then Request headers
         let auth = extractAuth(init?.headers);
         if (!auth && input instanceof Request) {
           auth = input.headers.get('Authorization');

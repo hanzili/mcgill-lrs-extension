@@ -1,6 +1,6 @@
 # McGill LRS Downloader
 
-A Chrome extension that downloads lecture recordings from McGill's Lecture Recording System (LRS). Just open any course's recordings page on myCourses — the extension automatically detects your session and lets you download lectures with real-time progress tracking.
+A Chrome extension that downloads lecture recordings from McGill's Lecture Recording System (LRS). Just open any course's recordings page on myCourses — the extension automatically captures your session and generates download scripts you can run in Terminal.
 
 ![Screenshot](assets/screenshot.png)
 
@@ -8,9 +8,9 @@ A Chrome extension that downloads lecture recordings from McGill's Lecture Recor
 
 - **Zero setup** — automatically captures your authentication token when you visit a course's LRS page
 - **One-click downloads** — download individual lectures or all at once
-- **Real-time progress** — see download percentage, MB transferred, and a progress bar
-- **Sequential batch downloads** — "Download all" queues lectures one at a time to avoid overwhelming the CDN
-- **Smart file naming** — saves as `CourseName_Date_Instructor.ts` in a `McGill-Lectures` folder
+- **Reliable large-file downloads** — generates curl scripts that handle 1GB+ lecture files without browser memory limits
+- **Smart file naming** — saves as `CourseName_Date_Instructor.ts` in `~/Downloads/McGill-Lectures/`
+- **Batch support** — "Download all" generates a single script with all lectures
 
 ## Installation
 
@@ -26,8 +26,27 @@ A Chrome extension that downloads lecture recordings from McGill's Lecture Recor
 2. Navigate to **Lecture Recordings** (Content → Lecture Recordings)
 3. Click the extension icon — it should show **Active** and list all recordings
 4. Click the download button on any recording, or hit **Download all**
+5. A `.command` script will be saved to your Downloads folder
+6. Run it:
+   ```bash
+   cd ~/Downloads/McGill-Lectures
+   chmod +x *.command
+   open *.command
+   ```
 
-The extension saves files to your default downloads folder under `McGill-Lectures/`.
+Files are saved to `~/Downloads/McGill-Lectures/`.
+
+### Standalone script (alternative)
+
+A standalone bash script is also included for power users who prefer the command line:
+
+```bash
+# Requires: curl, jq, ffmpeg
+./mcgill-lrs-dl.sh           # shows instructions to get your JWT token
+./mcgill-lrs-dl.sh <TOKEN>   # downloads recordings interactively
+```
+
+This script also converts `.ts` files to `.mp4` automatically via ffmpeg.
 
 ## How It Works
 
@@ -37,19 +56,20 @@ The extension uses a multi-layer approach to work within Chrome's Manifest V3 co
 
 2. **Recording discovery** — The service worker uses the captured JWT to call the LRS API and fetch the list of recordings for the course.
 
-3. **Download pipeline** — Each recording has an HLS manifest pointing to a `.ts` media file on McGill's CDN. The service worker fetches the video directly (service workers have `host_permissions` that bypass CORS restrictions), streams it with progress tracking, then hands the completed blob to `chrome.downloads` for saving to disk.
+3. **Script generation** — Each recording has an HLS manifest pointing to a `.ts` media file on McGill's CDN. The service worker resolves the direct media URL from the manifest, then generates a shell script with curl commands that download the files reliably — no browser memory limits, no service worker timeouts.
 
 ## Project Structure
 
 ```
-├── manifest.json      # Extension config (Manifest V3)
-├── background.js      # Service worker: token storage, API calls, downloads
-├── intercept.js       # Content script (MAIN world): patches fetch/XHR
-├── bridge.js          # Content script (ISOLATED world): relays tokens
-├── popup.html         # Extension popup UI
-├── popup.css          # Styles
-├── popup.js           # Popup logic and progress updates
-└── icons/             # Extension icons (16, 48, 128px)
+├── manifest.json        # Extension config (Manifest V3)
+├── background.js        # Service worker: token storage, API calls, script generation
+├── intercept.js         # Content script (MAIN world): patches fetch/XHR
+├── bridge.js            # Content script (ISOLATED world): relays tokens
+├── popup.html           # Extension popup UI
+├── popup.css            # Styles (dark theme)
+├── popup.js             # Popup logic
+├── mcgill-lrs-dl.sh     # Standalone download script (alternative to extension)
+└── icons/               # Extension icons (16, 48, 128px)
 ```
 
 ## License
