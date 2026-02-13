@@ -10,6 +10,11 @@ let currentCourseId = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
   state = await sendMessage({ type: 'GET_STATE' });
+
+  // On popup open, immediately clear any stuck 'saving' downloads.
+  // The saving step takes <1s, so if we see it on open, the SW crashed.
+  await clearStaleDownloads();
+
   tryLoadFromState();
 
   $('#downloadAllBtn').addEventListener('click', downloadAll);
@@ -300,6 +305,26 @@ function waitForDownload(recId) {
 
 // ─── Stale Download Recovery ─────────────────────────
 
+async function clearStaleDownloads() {
+  const data = await chrome.storage.local.get('downloads');
+  const downloads = data.downloads || {};
+  let changed = false;
+
+  for (const [id, dl] of Object.entries(downloads)) {
+    if (dl.status === 'saving') {
+      // 'saving' is a transient state (<1s). If we see it on popup open,
+      // the service worker crashed before completing. Reset to allow retry.
+      downloads[id].status = 'failed';
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await chrome.storage.local.set({ downloads });
+    state.downloads = downloads;
+  }
+}
+
 async function recoverStaleDownloads() {
   if (!recordings.length) return;
 
@@ -312,14 +337,14 @@ async function recoverStaleDownloads() {
     const dl = downloads[rec.id];
     if (!dl) continue;
 
-    // If stuck in 'saving' or 'downloading' for over 2 minutes,
-    // the service worker likely crashed — mark as failed so user can retry
-    if ((dl.status === 'saving' || dl.status === 'downloading') && dl.staleCheck) {
+    // If stuck in 'downloading' for over 2 minutes with no progress update,
+    // the service worker likely died — mark as failed so user can retry
+    if (dl.status === 'downloading' && dl.staleCheck) {
       if (now - dl.staleCheck > 120000) {
         downloads[rec.id].status = 'failed';
         changed = true;
       }
-    } else if (dl.status === 'saving' || dl.status === 'downloading') {
+    } else if (dl.status === 'downloading') {
       downloads[rec.id].staleCheck = now;
       changed = true;
     }
