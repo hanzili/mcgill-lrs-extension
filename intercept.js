@@ -3,6 +3,8 @@
 // bridge script running in the ISOLATED world.
 
 (function() {
+  // Compared case-insensitively: the LRS player calls
+  // https://LRSWAPI.campus.mcgill.ca/api/ (upper-case host).
   const TARGET = 'lrswapi.campus.mcgill.ca';
   const MSG_TYPE = '__LRS_TOKEN__';
 
@@ -31,7 +33,7 @@
                 : input instanceof Request ? input.url
                 : String(input);
 
-      if (url.includes(TARGET)) {
+      if (url.toLowerCase().includes(TARGET)) {
         let auth = extractAuth(init?.headers);
         if (!auth && input instanceof Request) {
           auth = input.headers.get('Authorization');
@@ -49,7 +51,7 @@
   const _setHeader = XMLHttpRequest.prototype.setRequestHeader;
 
   XMLHttpRequest.prototype.open = function(method, url) {
-    this._lrsUrl = String(url);
+    this._lrsUrl = String(url).toLowerCase();
     return _open.apply(this, arguments);
   };
 

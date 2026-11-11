@@ -187,9 +187,11 @@ function updateDownloadProgress(progress) {
   const pctText = progress.pct !== null ? `${progress.pct}%` : '';
   const sizeText = `${receivedMB}/${totalMB} MB`;
   const barPct = progress.pct !== null ? progress.pct : 0;
+  // Fully fetched but not yet handed to Chrome's downloads (remuxing)
+  const text = progress.pct === 100 ? `Saving… ${sizeText}` : `${pctText} ${sizeText}`;
 
   progressEl.innerHTML = `
-    <span class="rec-progress-text">${pctText} ${sizeText}</span>
+    <span class="rec-progress-text">${text}</span>
     <div class="progress-bar"><div class="progress-fill" style="width:${barPct}%"></div></div>
   `;
 }
@@ -251,6 +253,12 @@ async function downloadAll() {
     recordings
   });
 
+  // Rows that could not be started would otherwise stay "Queued..." forever.
+  // If nothing started, the reason is shown once on the button instead.
+  for (const { recId, error } of result?.failures || []) {
+    markRowFailed(recId, result?.ok ? error : 'Failed');
+  }
+
   if (result?.ok) {
     // Also store actual filenames from background (in case they differ)
     if (result.filenames) {
@@ -264,8 +272,21 @@ async function downloadAll() {
     btn.innerHTML = msg;
     showKeepOpenHint();
   } else {
-    btn.innerHTML = `Failed: ${result?.error || 'Unknown error'}`;
+    if (!result?.failures) {
+      for (const rec of recordings) markRowFailed(rec.id, 'Failed');
+    }
+    btn.textContent = `Failed: ${result?.error || 'Unknown error'}`;
     btn.disabled = false;
+  }
+}
+
+function markRowFailed(recId, error) {
+  const btn = $(`.btn-dl[data-id="${recId}"]`);
+  if (btn) { btn.innerHTML = getIcon('failed'); btn.className = 'btn-dl failed'; }
+  const progressEl = $(`#progress-${recId}`);
+  if (progressEl) {
+    progressEl.innerHTML = '<span class="rec-progress-text failed"></span>';
+    progressEl.firstChild.textContent = error;
   }
 }
 
@@ -274,7 +295,7 @@ function showKeepOpenHint() {
   const hint = document.createElement('div');
   hint.id = 'keepOpenHint';
   hint.className = 'script-hint';
-  hint.innerHTML = 'Keep the lecture tab open — the video is downloading in the background. It will appear in Chrome\'s download bar when ready.';
+  hint.innerHTML = 'Keep the lecture tab open — the video is downloading in the background. It will appear in Chrome\'s download bar when ready. If Chrome asks to allow multiple downloads, click Allow.';
   $('#recordingsList').parentElement.appendChild(hint);
 }
 
